@@ -1,240 +1,329 @@
-require("dotenv").config();
+require("dotenv").config()
+
+/* ================= IMPORTS ================= */
+
 const {
-  Client,
-  GatewayIntentBits,
-  ActionRowBuilder,
-  StringSelectMenuBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  PermissionsBitField,
-  REST,
-  Routes
-} = require("discord.js");
+Client,
+GatewayIntentBits,
+EmbedBuilder,
+ActionRowBuilder,
+StringSelectMenuBuilder,
+ModalBuilder,
+TextInputBuilder,
+TextInputStyle,
+ButtonBuilder,
+ButtonStyle,
+ChannelType
+} = require("discord.js")
 
-const mongoose = require("mongoose");
-const transcripts = require("discord-html-transcripts");
+const mongoose = require("mongoose")
+const { createTranscript } = require("discord-html-transcripts")
 
-// ================= MONGODB =================
+/* ================= DATABASE ================= */
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.log("❌ MongoDB Error:", err));
-
-// ================= SCHEMA =================
+.then(()=>console.log("MongoDB Connected"))
+.catch(err=>console.log(err))
 
 const ticketSchema = new mongoose.Schema({
-  guildId: String,
-  channelId: String,
-  userId: String,
-  category: String,
-  claimedBy: String,
-  rating: { type: Number, default: null },
-  status: { type: String, default: "open" },
-  createdAt: { type: Date, default: Date.now }
-});
+ticketNumber:Number,
+userId:String,
+channelId:String,
+staffId:String
+})
 
-const Ticket = mongoose.model("Ticket", ticketSchema);
+const Ticket = mongoose.model("Ticket",ticketSchema)
 
-// ================= CLIENT =================
+const counterSchema = new mongoose.Schema({
+name:String,
+value:Number
+})
+
+const Counter = mongoose.model("Counter",counterSchema)
+
+/* ================= CLIENT ================= */
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ]
-});
+intents:[GatewayIntentBits.Guilds]
+})
 
-// ================= READY EVENT =================
+/* ================= READY EVENT ================= */
 
-client.once("ready", async () => {
-  console.log(`${client.user.tag} is online`);
+client.once("ready", async ()=>{
 
-  const commands = [
-    { name: "panel", description: "Send the RedLine ticket panel" }
-  ];
+console.log(`${client.user.tag} online`)
 
-  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+const channel = await client.channels.fetch(process.env.PANEL_CHANNEL)
 
-  await rest.put(
-    Routes.applicationGuildCommands(
-      client.user.id,
-      process.env.GUILD_ID
-    ),
-    { body: commands }
-  );
+const embed = new EmbedBuilder()
+.setColor("Red")
+.setTitle("Support Tickets")
+.setDescription(`# RedLine - Support Center
 
-  console.log("✅ Slash command registered");
-});
+Welcome to the **RedLine Ticket System** — your gateway to fast and friendly assistance! Need help, want to appeal a ban, or claim a reward? You’re in the right place.
 
-// ================= INTERACTIONS =================
+Please select a category below to open a ticket. Our staff will be with you shortly.
 
-client.on("interactionCreate", async interaction => {
+**Available Ticket Types:**
+1. <a:dc:1479163975387320422> General Support - Question, bugs , or anything else 
+2. <:topgg_ico_info:1479164531816267839> Unban Appeal - Think Your ban was a mistake? let's talk
+3. <:Giveaway:1479163928985604207> Purchase Rank & Items - Help with donations or missing perks 
+4. <a:verify:1479164474232668200> Claim a Reward - Won an event or earned a gift? Redeem it here 
+5. <:staff:1479167441132060702> And More - Other issues? We're happy to help!
 
-  // ================= PANEL =================
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "panel") {
+**Support Hours:**
+Daily — 7:00 AM to 10:00 PM IST
 
-      if (!interaction.member.permissions.has("Administrator")) {
-        return interaction.reply({
-          content: "❌ Only Administrators can use this.",
-          ephemeral: true
-        });
-      }
+Please be patient while we respond—your satisfaction is our priority.`)
 
-      const embed = new EmbedBuilder()
-        .setColor("Red")
-        .setTitle("RedLine - Support Center")
-        .setDescription("Select a category below to open a ticket.");
+.setImage("https://cdn.discordapp.com/attachments/1393984180924317821/1478467125944254505/standard_1.gif")
+.setFooter({ text: "Thanks for being part of the RedLine community!.." })
 
-      const menu = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId("ticket_select")
-          .setPlaceholder("Choose ticket type")
-          .addOptions([
-            { label: "General Support", value: "general" },
-            { label: "Unban Appeal", value: "ban" },
-            { label: "Purchase Help", value: "purchase" },
-            { label: "Claim Reward", value: "reward" }
-          ])
-      );
+const menu = new ActionRowBuilder().addComponents(
 
-      await interaction.reply({ embeds: [embed], components: [menu] });
-    }
-  }
+new StringSelectMenuBuilder()
+.setCustomId("ticket_menu")
+.setPlaceholder("Select Ticket Type")
+.addOptions([
+{
+label:"General Support",
+value:"general",
+emoji:"1479163975387320422"
+},
+{
+label:"Unban Appeal",
+value:"appeal",
+emoji:"1479164531816267839"
+},
+{
+label:"Purchase Rank & Items",
+value:"purchase",
+emoji:"1318155717923831900"
+},
+{
+label:"Claim Reward",
+value:"reward",
+emoji:"1479164474232668200"
+}
+])
 
-  // ================= CREATE TICKET =================
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === "ticket_select") {
+)
 
-      await interaction.deferReply({ ephemeral: true });
+channel.send({
+embeds:[embed],
+components:[menu]
+})
 
-      const existing = await Ticket.findOne({
-        guildId: interaction.guild.id,
-        userId: interaction.user.id,
-        status: "open"
-      });
+})
 
-      if (existing)
-        return interaction.editReply("❌ You already have an open ticket.");
+/* ================= INTERACTIONS ================= */
 
-      const channel = await interaction.guild.channels.create({
-        name: `ticket-${interaction.user.username}`,
-        parent: process.env.CATEGORY_ID,
-        permissionOverwrites: [
-          { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-          { id: process.env.STAFF_ROLE, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
+client.on("interactionCreate", async interaction=>{
 
-      await Ticket.create({
-        guildId: interaction.guild.id,
-        channelId: channel.id,
-        userId: interaction.user.id,
-        category: interaction.values[0]
-      });
+/* ===== MENU → MODAL ===== */
 
-      const buttons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("claim")
-          .setLabel("Claim")
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId("close")
-          .setLabel("Close")
-          .setStyle(ButtonStyle.Danger)
-      );
+if(interaction.isStringSelectMenu() && interaction.customId==="ticket_menu"){
 
-      await channel.send({
-        content: `<@&${process.env.STAFF_ROLE}> | <@${interaction.user.id}>`,
-        components: [buttons]
-      });
+const modal = new ModalBuilder()
+.setCustomId("ticket_modal")
+.setTitle("Create Ticket")
 
-      await interaction.editReply(`✅ Ticket created: ${channel}`);
-    }
-  }
+const mc = new TextInputBuilder()
+.setCustomId("minecraft")
+.setLabel("Minecraft Username")
+.setStyle(TextInputStyle.Short)
 
-  // ================= CLAIM =================
-  if (interaction.isButton() && interaction.customId === "claim") {
+const desc = new TextInputBuilder()
+.setCustomId("description")
+.setLabel("Describe your issue")
+.setStyle(TextInputStyle.Paragraph)
 
-    if (!interaction.member.roles.cache.has(process.env.STAFF_ROLE)) {
-      return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
-    }
+modal.addComponents(
+new ActionRowBuilder().addComponents(mc),
+new ActionRowBuilder().addComponents(desc)
+)
 
-    const ticket = await Ticket.findOne({ channelId: interaction.channel.id });
+interaction.showModal(modal)
 
-    if (!ticket || ticket.claimedBy)
-      return interaction.reply({ content: "❌ Already claimed.", ephemeral: true });
+}
 
-    ticket.claimedBy = interaction.user.id;
-    await ticket.save();
+/* ===== CREATE TICKET ===== */
 
-    await interaction.reply(`✅ Claimed by <@${interaction.user.id}>`);
-  }
+if(interaction.isModalSubmit() && interaction.customId==="ticket_modal"){
 
-  // ================= CLOSE + TRANSCRIPT =================
-  if (interaction.isButton() && interaction.customId === "close") {
+let counter = await Counter.findOne({name:"ticket"})
 
-    const ticket = await Ticket.findOne({ channelId: interaction.channel.id });
-    if (!ticket) return;
+if(!counter){
+counter = await Counter.create({name:"ticket",value:1})
+}else{
+counter.value++
+await counter.save()
+}
 
-    if (ticket.claimedBy !== interaction.user.id)
-      return interaction.reply({ content: "❌ Only claimed staff can close.", ephemeral: true });
+const number = counter.value.toString().padStart(4,"0")
 
-    await interaction.reply("📁 Generating transcript & closing...");
+const channel = await interaction.guild.channels.create({
 
-    const attachment = await transcripts.createTranscript(interaction.channel);
+name:`ticket-${number}`,
+type:ChannelType.GuildText,
+parent:process.env.TICKET_CATEGORY,
 
-    const reviewChannel = interaction.guild.channels.cache.get(process.env.REVIEW_CHANNEL);
+permissionOverwrites:[
+{ id:interaction.guild.id, deny:["ViewChannel"] },
+{ id:interaction.user.id, allow:["ViewChannel","SendMessages"] },
+{ id:process.env.SUPPORT_ROLE, allow:["ViewChannel","SendMessages"] }
+]
 
-    await reviewChannel.send({
-      content: `📁 Ticket Closed\nUser: <@${ticket.userId}>\nHandled By: <@${ticket.claimedBy}>`,
-      files: [attachment]
-    });
+})
 
-    const user = await client.users.fetch(ticket.userId);
-    await user.send("Please rate your support from 1 to 5 (reply with number).").catch(() => {});
+await Ticket.create({
+ticketNumber:number,
+userId:interaction.user.id,
+channelId:channel.id
+})
 
-    ticket.status = "closed";
-    await ticket.save();
+const buttons = new ActionRowBuilder().addComponents(
 
-    setTimeout(() => interaction.channel.delete().catch(() => {}), 4000);
-  }
-});
+new ButtonBuilder()
+.setCustomId("claim")
+.setLabel("Claim")
+.setStyle(ButtonStyle.Success),
 
-// ================= REVIEW SYSTEM =================
+new ButtonBuilder()
+.setCustomId("close")
+.setLabel("Close")
+.setStyle(ButtonStyle.Danger)
 
-client.on("messageCreate", async message => {
+)
 
-  if (!message.channel.isDMBased()) return;
-  if (isNaN(message.content)) return;
+channel.send({
+content:`<@&${process.env.SUPPORT_ROLE}>`,
+embeds:[
+new EmbedBuilder()
+.setColor("Red")
+.setTitle("🎫 Ticket Created")
+.setDescription(`Hello <@${interaction.user.id}>!
 
-  const rating = Number(message.content);
-  if (rating < 1 || rating > 5) return;
+Thank you for contacting **RedLine Support**.`)
+.addFields(
+{name:"Minecraft Username",value:interaction.fields.getTextInputValue("minecraft")},
+{name:"Description",value:interaction.fields.getTextInputValue("description")}
+)
+],
+components:[buttons]
+})
 
-  const ticket = await Ticket.findOne({
-    userId: message.author.id,
-    status: "closed",
-    rating: null
-  }).sort({ createdAt: -1 });
+interaction.reply({
+content:`✅ Ticket created: ${channel}`,
+ephemeral:true
+})
 
-  if (!ticket) return;
+}
 
-  ticket.rating = rating;
-  await ticket.save();
+/* ===== CLAIM ===== */
 
-  const reviewChannel = client.channels.cache.get(process.env.REVIEW_CHANNEL);
+if(interaction.isButton() && interaction.customId==="claim"){
 
-  await reviewChannel.send(
-    `⭐ New Review\nUser: <@${ticket.userId}>\nStaff: <@${ticket.claimedBy}>\nRating: ${rating}/5`
-  );
+await Ticket.updateOne(
+{channelId:interaction.channel.id},
+{$set:{staffId:interaction.user.id}}
+)
 
-  message.reply("✅ Thank you for your feedback!");
-});
+interaction.reply({
+content:`🔧 Ticket claimed by <@${interaction.user.id}>`
+})
 
-// ================= LOGIN =================
+}
 
-client.login(process.env.TOKEN);
+/* ===== CLOSE ===== */
+
+if(interaction.isButton() && interaction.customId==="close"){
+
+interaction.reply({
+content:`🔒 Closing Ticket...
+Generating transcript and requesting feedback.`
+})
+
+const ticket = await Ticket.findOne({channelId:interaction.channel.id})
+
+const user = await client.users.fetch(ticket.userId)
+
+const transcript = await createTranscript(interaction.channel,{
+limit:-1,
+filename:`${interaction.channel.name}.html`
+})
+
+const reviewChannel = await client.channels.fetch(process.env.REVIEW_CHANNEL)
+
+reviewChannel.send({
+embeds:[
+new EmbedBuilder()
+.setColor("Red")
+.setTitle("Ticket Closed")
+.setDescription(`Ticket: ${interaction.channel.name}
+
+User: <@${ticket.userId}>
+Staff: <@${interaction.user.id}>`)
+],
+files:[transcript]
+})
+
+const ratingMenu = new ActionRowBuilder().addComponents(
+new StringSelectMenuBuilder()
+.setCustomId("rating")
+.setPlaceholder("Rate Support")
+.addOptions([
+{label:"1 Star",value:"1"},
+{label:"2 Stars",value:"2"},
+{label:"3 Stars",value:"3"},
+{label:"4 Stars",value:"4"},
+{label:"5 Stars",value:"5"}
+])
+)
+
+user.send({
+content:`⭐ RedLine Support
+
+Your ticket has been closed.
+Please rate your support experience.`,
+components:[ratingMenu]
+})
+
+setTimeout(()=>{
+interaction.channel.delete()
+},10000)
+
+}
+
+/* ===== RATING ===== */
+
+if(interaction.isStringSelectMenu() && interaction.customId==="rating"){
+
+const rating = interaction.values[0]
+const stars = "⭐".repeat(rating)
+
+interaction.reply({
+content:`Thanks for your feedback!\n${stars}`,
+ephemeral:true
+})
+
+const reviewChannel = await client.channels.fetch(process.env.REVIEW_CHANNEL)
+
+reviewChannel.send({
+embeds:[
+new EmbedBuilder()
+.setColor("Gold")
+.setTitle("Ticket Feedback")
+.setDescription(`User: <@${interaction.user.id}>
+
+Rating: ${stars}`)
+]
+})
+
+}
+
+})
+
+/* ================= LOGIN ================= */
+
+client.login(process.env.TOKEN)
